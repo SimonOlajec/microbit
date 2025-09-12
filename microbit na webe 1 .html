@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<body>
+<button id="connect">Pripojiť micro:bit</button>
+<pre id="log"></pre>
+
+<script>
+const log = (msg) => {
+  document.querySelector("#log").textContent += msg + "\n";
+};
+
+document.querySelector("#connect").onclick = async () => {
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "BBC micro:bit" }],
+      optionalServices: [0x1800, 0x1801, 0x180A, 0x180F, 0x1812,
+                         "6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
+    });
+    const server = await device.gatt.connect();
+    const services = await server.getPrimaryServices();
+    for (const service of services) {
+      log("Service: " + service.uuid);
+      const chars = await service.getCharacteristics();
+      for (const char of chars) {
+        log("  Characteristic: " + char.uuid + " props=" +
+          JSON.stringify(char.properties));
+      }
+    }
+  } catch (err) {
+    log("Chyba: " + err);
+  }
+};
+</script>
+</body>
+</html>
