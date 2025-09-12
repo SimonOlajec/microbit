@@ -69,7 +69,6 @@ async function connectMicrobit() {
     appendLog('Získavam TX characteristic...');
     txChar = await service.getCharacteristic(UART_TX_CHAR_UUID);
 
-    // Spusti notifikácie – niektoré micro:bity nemajú správne flagy, ale funkčné je to aj tak
     try { 
       await txChar.startNotifications();
       txChar.addEventListener('characteristicvaluechanged', handleNotifications);
