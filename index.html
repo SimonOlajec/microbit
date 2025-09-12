@@ -105,12 +105,16 @@ async function sendToMicrobit() {
   if (!rxChar) return appendLog('RX characteristic nie je pripravená.');
   const text = sendInput.value;
   if (!text) return;
+
   const encoder = new TextEncoder();
   const data = encoder.encode(text + '\n');
   const MTU = 20;
+
   try {
     for (let i = 0; i < data.length; i += MTU) {
-      await rxChar.writeValue(data.slice(i, i + MTU));
+      const chunk = data.slice(i, i + MTU);
+      // Použitie writeWithoutResponse namiesto writeValue
+      await rxChar.writeValueWithoutResponse(chunk);
     }
     appendLog('Odoslané: ' + text);
   } catch(err) {
