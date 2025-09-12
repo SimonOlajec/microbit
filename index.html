@@ -3,17 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Micro:bit UART Test</title>
+<title>Micro:bit UART Web</title>
 <style>
-body { font-family: sans-serif; margin: 20px; }
-button { margin: 0.25rem; }
-#log { border: 1px solid #ccc; padding: 8px; height: 250px; overflow: auto; background: #f9f9f9; }
-input[type=text] { padding: 0.4rem; flex:1; }
-.row { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
+body { font-family:sans-serif; margin:20px; }
+button { margin:0.25rem; }
+#log { border:1px solid #ccc; padding:8px; height:250px; overflow:auto; background:#f9f9f9; }
+input[type=text] { flex:1; padding:0.4rem; }
+.row { display:flex; gap:0.5rem; align-items:center; margin:0.5rem 0; }
 </style>
 </head>
 <body>
-<h2>Micro:bit UART Test</h2>
+
+<h2>Micro:bit UART Web</h2>
 
 <div class="row">
   <button id="connectBtn">Pripojiť micro:bit</button>
@@ -22,7 +23,7 @@ input[type=text] { padding: 0.4rem; flex:1; }
 </div>
 
 <div class="row">
-  <input type="text" id="sendInput" placeholder="Zadaj text na odoslanie">
+  <input type="text" id="sendInput" placeholder="Zadaj text (napr. 1)">
   <button id="sendBtn" disabled>Odoslať</button>
 </div>
 
@@ -52,7 +53,7 @@ async function connectMicrobit() {
   try {
     appendLog('Požiadajte výber zariadenia...');
     device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: 'BBC micro:bit' }],
+      filters: [{namePrefix:'BBC micro:bit'}],
       optionalServices: [UART_SERVICE_UUID]
     });
     device.addEventListener('gattserverdisconnected', onDisconnected);
@@ -69,10 +70,10 @@ async function connectMicrobit() {
     appendLog('Získavam TX characteristic...');
     txChar = await service.getCharacteristic(UART_TX_CHAR_UUID);
 
-    try { 
+    try {
       await txChar.startNotifications();
       txChar.addEventListener('characteristicvaluechanged', handleNotifications);
-      appendLog('Notifikácie zapnuté.');
+      appendLog('TX notifikácie zapnuté.');
     } catch(e) {
       appendLog('TX notifikácie nefungujú, ale RX write áno.');
     }
@@ -103,20 +104,22 @@ function handleNotifications(event) {
 
 async function sendToMicrobit() {
   if (!rxChar) return appendLog('RX characteristic nie je pripravená.');
-  const text = sendInput.value;
+  let text = sendInput.value;
   if (!text) return;
 
+  // Pridáme novú linku, aby micro:bit vedel spracovať
+  text += '\n';
   const encoder = new TextEncoder();
-  const data = encoder.encode(text + '\n');
+  const data = encoder.encode(text);
   const MTU = 20;
 
   try {
-    for (let i = 0; i < data.length; i += MTU) {
-      const chunk = data.slice(i, i + MTU);
-      // Použitie writeWithoutResponse namiesto writeValue
+    for (let i=0;i<data.length;i+=MTU){
+      const chunk = data.slice(i, i+MTU);
       await rxChar.writeValueWithoutResponse(chunk);
     }
-    appendLog('Odoslané: ' + text);
+    appendLog('Odoslané: ' + sendInput.value);
+    sendInput.value = '';
   } catch(err) {
     appendLog('Chyba pri odoslaní: ' + err);
   }
@@ -128,7 +131,8 @@ disconnectBtn.addEventListener('click', async () => {
   onDisconnected();
 });
 sendBtn.addEventListener('click', sendToMicrobit);
-sendInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') sendToMicrobit(); });
+sendInput.addEventListener('keydown', e => { if(e.key==='Enter') sendToMicrobit(); });
 </script>
+
 </body>
 </html>
