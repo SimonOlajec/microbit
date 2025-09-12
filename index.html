@@ -1,35 +1,131 @@
 <!DOCTYPE html>
-<html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Micro:bit UART Test</title>
+<style>
+body { font-family: sans-serif; margin: 20px; }
+button { margin: 0.25rem; }
+#log { border: 1px solid #ccc; padding: 8px; height: 250px; overflow: auto; background: #f9f9f9; }
+input[type=text] { padding: 0.4rem; flex:1; }
+.row { display: flex; gap: 0.5rem; align-items: center; margin: 0.5rem 0; }
+</style>
+</head>
 <body>
-<button id="connect">Pripojiť micro:bit</button>
-<pre id="log"></pre>
+<h2>Micro:bit UART Test</h2>
+
+<div class="row">
+  <button id="connectBtn">Pripojiť micro:bit</button>
+  <button id="disconnectBtn" disabled>Odpojiť</button>
+  <span id="status">Nepripojené</span>
+</div>
+
+<div class="row">
+  <input type="text" id="sendInput" placeholder="Zadaj text na odoslanie">
+  <button id="sendBtn" disabled>Odoslať</button>
+</div>
+
+<div id="log"></div>
 
 <script>
-const log = (msg) => {
-  document.querySelector("#log").textContent += msg + "\n";
-};
+const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const UART_TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-document.querySelector("#connect").onclick = async () => {
+let device, server, rxChar, txChar;
+
+const logEl = document.getElementById('log');
+const statusEl = document.getElementById('status');
+const connectBtn = document.getElementById('connectBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+const sendBtn = document.getElementById('sendBtn');
+const sendInput = document.getElementById('sendInput');
+
+function appendLog(msg) {
+  const time = new Date().toLocaleTimeString();
+  logEl.textContent += `[${time}] ${msg}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function connectMicrobit() {
   try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ namePrefix: "BBC micro:bit" }],
-      optionalServices: [0x1800, 0x1801, 0x180A, 0x180F, 0x1812,
-                         "6e400001-b5a3-f393-e0a9-e50e24dcca9e"]
+    appendLog('Požiadajte výber zariadenia...');
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'BBC micro:bit' }],
+      optionalServices: [UART_SERVICE_UUID]
     });
-    const server = await device.gatt.connect();
-    const services = await server.getPrimaryServices();
-    for (const service of services) {
-      log("Service: " + service.uuid);
-      const chars = await service.getCharacteristics();
-      for (const char of chars) {
-        log("  Characteristic: " + char.uuid + " props=" +
-          JSON.stringify(char.properties));
-      }
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+
+    appendLog('Pripájanie k GATT serveru...');
+    server = await device.gatt.connect();
+
+    appendLog('Získavam UART service...');
+    const service = await server.getPrimaryService(UART_SERVICE_UUID);
+
+    appendLog('Získavam RX characteristic...');
+    rxChar = await service.getCharacteristic(UART_RX_CHAR_UUID);
+
+    appendLog('Získavam TX characteristic...');
+    txChar = await service.getCharacteristic(UART_TX_CHAR_UUID);
+
+    // Spusti notifikácie – niektoré micro:bity nemajú správne flagy, ale funkčné je to aj tak
+    try { 
+      await txChar.startNotifications();
+      txChar.addEventListener('characteristicvaluechanged', handleNotifications);
+      appendLog('Notifikácie zapnuté.');
+    } catch(e) {
+      appendLog('TX notifikácie nefungujú, ale RX write áno.');
     }
-  } catch (err) {
-    log("Chyba: " + err);
+
+    statusEl.textContent = `Pripojené: ${device.name || device.id}`;
+    connectBtn.disabled = true;
+    disconnectBtn.disabled = false;
+    sendBtn.disabled = false;
+    appendLog('Pripojené. Môžete odosielať správy.');
+  } catch(err) {
+    appendLog('Chyba pri pripojení: ' + err);
   }
-};
+}
+
+function onDisconnected() {
+  appendLog('Micro:bit odpojený.');
+  statusEl.textContent = 'Nepripojené';
+  connectBtn.disabled = false;
+  disconnectBtn.disabled = true;
+  sendBtn.disabled = true;
+}
+
+function handleNotifications(event) {
+  const value = event.target.value;
+  const text = new TextDecoder().decode(value);
+  appendLog('Prijaté: ' + text);
+}
+
+async function sendToMicrobit() {
+  if (!rxChar) return appendLog('RX characteristic nie je pripravená.');
+  const text = sendInput.value;
+  if (!text) return;
+  const encoder = new TextEncoder();
+  const data = encoder.encode(text + '\n');
+  const MTU = 20;
+  try {
+    for (let i = 0; i < data.length; i += MTU) {
+      await rxChar.writeValue(data.slice(i, i + MTU));
+    }
+    appendLog('Odoslané: ' + text);
+  } catch(err) {
+    appendLog('Chyba pri odoslaní: ' + err);
+  }
+}
+
+connectBtn.addEventListener('click', connectMicrobit);
+disconnectBtn.addEventListener('click', async () => {
+  if (device && device.gatt.connected) await device.gatt.disconnect();
+  onDisconnected();
+});
+sendBtn.addEventListener('click', sendToMicrobit);
+sendInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') sendToMicrobit(); });
 </script>
 </body>
 </html>
