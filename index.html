@@ -1,138 +1,116 @@
 <!DOCTYPE html>
 <html lang="sk">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Micro:bit UART Web</title>
-<style>
-body { font-family:sans-serif; margin:20px; }
-button { margin:0.25rem; }
-#log { border:1px solid #ccc; padding:8px; height:250px; overflow:auto; background:#f9f9f9; }
-input[type=text] { flex:1; padding:0.4rem; }
-.row { display:flex; gap:0.5rem; align-items:center; margin:0.5rem 0; }
-</style>
+  <meta charset="UTF-8" />
+  <title>Micro:bit odosielanie správ</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f2f2f2;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      color: #333;
+    }
+    #status {
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    #indicator {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      margin-right: 10px;
+      background: red; /* default = odpojené */
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      padding: 10px;
+      font-size: 16px;
+      margin-bottom: 10px;
+      resize: none;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    #log {
+      margin-top: 20px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      height: 200px;
+      overflow-y: auto;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+  </style>
 </head>
 <body>
+  <h1>📡 Odosielanie správ na micro:bit</h1>
 
-<h2>Micro:bit UART Web</h2>
+  <div id="status">
+    <div id="indicator"></div>
+    <span id="status-text">Odpojené</span>
+  </div>
 
-<div class="row">
-  <button id="connectBtn">Pripojiť micro:bit</button>
-  <button id="disconnectBtn" disabled>Odpojiť</button>
-  <span id="status">Nepripojené</span>
-</div>
+  <textarea id="message" placeholder="Napíš správu..."></textarea><br>
+  <button onclick="sendMessage()">Odoslať</button>
 
-<div class="row">
-  <input type="text" id="sendInput" placeholder="Zadaj text (napr. 1)">
-  <button id="sendBtn" disabled>Odoslať</button>
-</div>
+  <div id="log"></div>
 
-<div id="log"></div>
+  <script>
+    const logDiv = document.getElementById("log");
+    const indicator = document.getElementById("indicator");
+    const statusText = document.getElementById("status-text");
 
-<script>
-const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const UART_RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-const UART_TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+    const ws = new WebSocket("ws://localhost:3000");
 
-let device, server, rxChar, txChar;
+    ws.onopen = () => {
+      indicator.style.background = "green";
+      statusText.textContent = "Pripojené";
+      log("✅ WebSocket pripojený");
+    };
 
-const logEl = document.getElementById('log');
-const statusEl = document.getElementById('status');
-const connectBtn = document.getElementById('connectBtn');
-const disconnectBtn = document.getElementById('disconnectBtn');
-const sendBtn = document.getElementById('sendBtn');
-const sendInput = document.getElementById('sendInput');
+    ws.onclose = () => {
+      indicator.style.background = "red";
+      statusText.textContent = "Odpojené";
+      log("❌ WebSocket odpojený");
+    };
 
-function appendLog(msg) {
-  const time = new Date().toLocaleTimeString();
-  logEl.textContent += `[${time}] ${msg}\n`;
-  logEl.scrollTop = logEl.scrollHeight;
-}
+    ws.onerror = (err) => {
+      log("⚠️ Chyba WebSocket: " + err.message);
+    };
 
-async function connectMicrobit() {
-  try {
-    appendLog('Požiadajte výber zariadenia...');
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{namePrefix:'BBC micro:bit'}],
-      optionalServices: [UART_SERVICE_UUID]
-    });
-    device.addEventListener('gattserverdisconnected', onDisconnected);
+    ws.onmessage = (event) => {
+      log("📥 Micro:bit → Web: " + event.data);
+    };
 
-    appendLog('Pripájanie k GATT serveru...');
-    server = await device.gatt.connect();
-
-    appendLog('Získavam UART service...');
-    const service = await server.getPrimaryService(UART_SERVICE_UUID);
-
-    appendLog('Získavam RX characteristic...');
-    rxChar = await service.getCharacteristic(UART_RX_CHAR_UUID);
-
-    appendLog('Získavam TX characteristic...');
-    txChar = await service.getCharacteristic(UART_TX_CHAR_UUID);
-
-    try {
-      await txChar.startNotifications();
-      txChar.addEventListener('characteristicvaluechanged', handleNotifications);
-      appendLog('TX notifikácie zapnuté.');
-    } catch(e) {
-      appendLog('TX notifikácie nefungujú, ale RX write áno.');
+    function sendMessage() {
+      const msg = document.getElementById("message").value.trim();
+      if (msg.length > 0) {
+        ws.send(msg);
+        log("➡️ Web → Micro:bit: " + msg);
+        document.getElementById("message").value = "";
+      }
     }
 
-    statusEl.textContent = `Pripojené: ${device.name || device.id}`;
-    connectBtn.disabled = true;
-    disconnectBtn.disabled = false;
-    sendBtn.disabled = false;
-    appendLog('Pripojené. Môžete odosielať správy.');
-  } catch(err) {
-    appendLog('Chyba pri pripojení: ' + err);
-  }
-}
-
-function onDisconnected() {
-  appendLog('Micro:bit odpojený.');
-  statusEl.textContent = 'Nepripojené';
-  connectBtn.disabled = false;
-  disconnectBtn.disabled = true;
-  sendBtn.disabled = true;
-}
-
-function handleNotifications(event) {
-  const value = event.target.value;
-  const text = new TextDecoder().decode(value);
-  appendLog('Prijaté: ' + text);
-}
-
-async function sendToMicrobit() {
-  if (!rxChar) return appendLog('RX characteristic nie je pripravená.');
-  let text = sendInput.value;
-  if (!text) return;
-
-  // Pridáme novú linku, aby micro:bit vedel spracovať
-  text += '\n';
-  const encoder = new TextEncoder();
-  const data = encoder.encode(text);
-  const MTU = 20;
-
-  try {
-    for (let i=0;i<data.length;i+=MTU){
-      const chunk = data.slice(i, i+MTU);
-      await rxChar.writeValueWithoutResponse(chunk);
+    function log(msg) {
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerText += `[${time}] ${msg}\n`;
+      logDiv.scrollTop = logDiv.scrollHeight;
     }
-    appendLog('Odoslané: ' + sendInput.value);
-    sendInput.value = '';
-  } catch(err) {
-    appendLog('Chyba pri odoslaní: ' + err);
-  }
-}
-
-connectBtn.addEventListener('click', connectMicrobit);
-disconnectBtn.addEventListener('click', async () => {
-  if (device && device.gatt.connected) await device.gatt.disconnect();
-  onDisconnected();
-});
-sendBtn.addEventListener('click', sendToMicrobit);
-sendInput.addEventListener('keydown', e => { if(e.key==='Enter') sendToMicrobit(); });
-</script>
-
+  </script>
 </body>
 </html>
